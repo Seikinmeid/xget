@@ -30,7 +30,53 @@ import { createRequestContext } from './request-context.js';
  * @param {ExecutionContext} ctx - Cloudflare Workers execution context for background tasks
  * @returns {Promise<Response>} The HTTP response with appropriate headers and body
  */
+/**
+ * Checks whether the request carries the configured access token.
+ *
+ * Auth is opt-in: when `env.XGET_TOKEN` is not set, every request passes and
+ * the worker behaves exactly as before. When it is set, the token must be
+ * supplied either as a `token` query parameter or an `X-Access-Token` header.
+ * @param {Request} request - The incoming HTTP request.
+ * @param {Record<string, unknown>} env - Cloudflare Workers environment variables.
+ * @returns {boolean} True when the request is authorized.
+ */
+function isAuthorized(request, env) {
+  const expected = env && env.XGET_TOKEN;
+  if (!expected) {
+    // No token configured: auth is disabled, keep the original behavior.
+    return true;
+  }
+
+  const url = new URL(request.url);
+  const supplied =
+    url.searchParams.get('token') || request.headers.get('X-Access-Token') || '';
+
+  if (supplied.length !== expected.length) {
+    return false;
+  }
+
+  // Constant-time comparison to avoid leaking the expected token length or value.
+  let diff = 0;
+  for (let i = 0; i < expected.length; i += 1) {
+    diff |= supplied.charCodeAt(i) ^ expected.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
 export async function handleRequest(request, env, ctx) {
+  if (!isAuthorized(request, env)) {
+    return createErrorResponse('Unauthorized', 401);
+  }
+
+  // Strip the token query parameter so it never reaches the upstream request.
+  if (env && env.XGET_TOKEN) {
+    const url = new URL(request.url);
+    if (url.searchParams.has('token')) {
+      url.searchParams.delete('token');
+      request = new Request(url.toString(), request);
+    }
+  }
+
   let response;
   const monitor = new PerformanceMonitor();
   const requestContext = createRequestContext(request, env);
