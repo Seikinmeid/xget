@@ -24,35 +24,31 @@ import { getAllowedMethods, isProtocolRequest, validateRequest } from '../utils/
 import { createRequestContext } from './request-context.js';
 
 /**
- * Checks whether the request carries the configured access token.
+ * Applies a global rate limit using the Cloudflare Rate Limiting binding.
  *
- * Auth is opt-in: when `env.XGET_TOKEN` is not set, every request passes and
- * the worker behaves exactly as before. When it is set, the token must be
- * supplied either as a `token` query parameter or an `X-Access-Token` header.
+ * When `env.RATE_LIMITER` is bound (see wrangler.toml), requests beyond the
+ * configured limit within the window are rejected with 429. When the binding
+ * is absent (local dev, tests), no limiting is applied.
  * @param {Request} request - The incoming HTTP request.
  * @param {Record<string, unknown>} env - Cloudflare Workers environment variables.
- * @returns {boolean} True when the request is authorized.
+ * @returns {Promise<Response | null>} A 429 response when over the limit, else null.
  */
-function isAuthorized(request, env) {
-  const expected = typeof env?.XGET_TOKEN === 'string' ? env.XGET_TOKEN : '';
-  if (!expected) {
-    // No token configured: auth is disabled, keep the original behavior.
-    return true;
+async function checkRateLimit(request, env) {
+  const limiter =
+    /** @type {{ limit: (opts: { key: string }) => Promise<{ success: boolean; reset?: number }> } | undefined} */ (
+      env && env.RATE_LIMITER
+    );
+  if (!limiter) {
+    return null;
   }
 
-  const url = new URL(request.url);
-  const supplied = url.searchParams.get('token') || request.headers.get('X-Access-Token') || '';
-
-  if (supplied.length !== expected.length) {
-    return false;
+  const result = await limiter.limit({ key: 'global' });
+  if (!result.success) {
+    const response = createErrorResponse('Rate limit exceeded', 429);
+    response.headers.set('Retry-After', String(result.reset || 60));
+    return response;
   }
-
-  // Constant-time comparison to avoid leaking the expected token length or value.
-  let diff = 0;
-  for (let i = 0; i < expected.length; i += 1) {
-    diff |= supplied.charCodeAt(i) ^ expected.charCodeAt(i);
-  }
-  return diff === 0;
+  return null;
 }
 
 /**
@@ -63,17 +59,9 @@ function isAuthorized(request, env) {
  * @returns {Promise<Response>} The HTTP response with appropriate headers and body
  */
 export async function handleRequest(request, env, ctx) {
-  if (!isAuthorized(request, env)) {
-    return createErrorResponse('Unauthorized', 401);
-  }
-
-  // Strip the token query parameter so it never reaches the upstream request.
-  if (env && env.XGET_TOKEN) {
-    const url = new URL(request.url);
-    if (url.searchParams.has('token')) {
-      url.searchParams.delete('token');
-      request = new Request(url.toString(), request);
-    }
+  const rateLimited = await checkRateLimit(request, env);
+  if (rateLimited) {
+    return rateLimited;
   }
 
   let response;
