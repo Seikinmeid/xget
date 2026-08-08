@@ -16,16 +16,18 @@ describe('Xget Token Authentication', () => {
     const response = await handleRequest(
       new Request('https://example.com/gh/microsoft/vscode/archive/refs/heads/main.zip'),
       envWithToken,
-      {}
+      { waitUntil: () => {}, passThroughOnException: () => {} }
     );
     expect(response.status).toBe(401);
   });
 
   it('rejects requests with a wrong token', async () => {
     const response = await handleRequest(
-      new Request('https://example.com/gh/microsoft/vscode/archive/refs/heads/main.zip?token=wrong'),
+      new Request(
+        'https://example.com/gh/microsoft/vscode/archive/refs/heads/main.zip?token=wrong'
+      ),
       envWithToken,
-      {}
+      { waitUntil: () => {}, passThroughOnException: () => {} }
     );
     expect(response.status).toBe(401);
   });
@@ -36,7 +38,7 @@ describe('Xget Token Authentication', () => {
         'https://example.com/gh/microsoft/vscode/archive/refs/heads/main.zip?token=secret-token-123'
       ),
       envWithToken,
-      {}
+      { waitUntil: () => {}, passThroughOnException: () => {} }
     );
     expect(response.status).not.toBe(401);
   });
@@ -47,7 +49,7 @@ describe('Xget Token Authentication', () => {
         headers: { 'X-Access-Token': 'secret-token-123' }
       }),
       envWithToken,
-      {}
+      { waitUntil: () => {}, passThroughOnException: () => {} }
     );
     expect(response.status).not.toBe(401);
   });
@@ -56,7 +58,7 @@ describe('Xget Token Authentication', () => {
     const response = await handleRequest(
       new Request('https://example.com/gh/microsoft/vscode/archive/refs/heads/main.zip'),
       {},
-      {}
+      { waitUntil: () => {}, passThroughOnException: () => {} }
     );
     expect(response.status).not.toBe(401);
   });
@@ -68,7 +70,7 @@ describe('Xget Token Authentication', () => {
         'https://example.com/gh/microsoft/vscode/archive/refs/heads/main.zip?token=secret-token-123&other=1'
       ),
       envWithToken,
-      {}
+      { waitUntil: () => {}, passThroughOnException: () => {} }
     );
     expect(response.status).not.toBe(401);
   });

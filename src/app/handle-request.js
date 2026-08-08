@@ -24,13 +24,6 @@ import { getAllowedMethods, isProtocolRequest, validateRequest } from '../utils/
 import { createRequestContext } from './request-context.js';
 
 /**
- * Main request handler with comprehensive caching, retry logic, and security measures.
- * @param {Request} request - The incoming HTTP request
- * @param {Record<string, unknown>} env - Cloudflare Workers environment variables for runtime config overrides
- * @param {ExecutionContext} ctx - Cloudflare Workers execution context for background tasks
- * @returns {Promise<Response>} The HTTP response with appropriate headers and body
- */
-/**
  * Checks whether the request carries the configured access token.
  *
  * Auth is opt-in: when `env.XGET_TOKEN` is not set, every request passes and
@@ -41,15 +34,14 @@ import { createRequestContext } from './request-context.js';
  * @returns {boolean} True when the request is authorized.
  */
 function isAuthorized(request, env) {
-  const expected = env && env.XGET_TOKEN;
+  const expected = typeof env?.XGET_TOKEN === 'string' ? env.XGET_TOKEN : '';
   if (!expected) {
     // No token configured: auth is disabled, keep the original behavior.
     return true;
   }
 
   const url = new URL(request.url);
-  const supplied =
-    url.searchParams.get('token') || request.headers.get('X-Access-Token') || '';
+  const supplied = url.searchParams.get('token') || request.headers.get('X-Access-Token') || '';
 
   if (supplied.length !== expected.length) {
     return false;
@@ -63,6 +55,13 @@ function isAuthorized(request, env) {
   return diff === 0;
 }
 
+/**
+ * Main request handler with comprehensive caching, retry logic, and security measures.
+ * @param {Request} request - The incoming HTTP request
+ * @param {Record<string, unknown>} env - Cloudflare Workers environment variables for runtime config overrides
+ * @param {ExecutionContext} ctx - Cloudflare Workers execution context for background tasks
+ * @returns {Promise<Response>} The HTTP response with appropriate headers and body
+ */
 export async function handleRequest(request, env, ctx) {
   if (!isAuthorized(request, env)) {
     return createErrorResponse('Unauthorized', 401);
